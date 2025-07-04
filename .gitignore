@@ -1,3 +1,69 @@
+# Python cache and environment files
+__pycache__/
+*.py[cod]
+*.so
+*.pyd
+*.pyo
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.venv/
+venv/
+ENV/
+env/
+*.env
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# IDE and editor folders
+.vscode/
+.idea/
+*.swp
+
+# Logs and outputs
+*.log
+*.out
+*.tmp
+outputs/
+logs/
+
+# Data folders (ensure real user data is never tracked)
+data/raw/
+data/interim/
+data/processed/
+
+# Allow example data for demonstration
+!data/example/
+!data/example/*
+
+# User uploads (if placed elsewhere)
+uploads/
+user_data/
+
+# Secrets
+*.key
+*.pem
+*.crt
+*.env
+.secrets/
+secret_*.json
+
+# Notebook execution outputs (optional)
+**/.ipynb_checkpoints
+
+# Reports
+*.html
+*.pdf
+report.txt
+reports/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
