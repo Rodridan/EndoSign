@@ -10,34 +10,90 @@ from matplotlib_venn import venn3
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
-def plot_group_counts(df: pd.DataFrame, group_col: str = "Group", ax=None):
+import matplotlib.pyplot as plt
+import seaborn as sns
+from matplotlib.patches import Patch
+from matplotlib_venn import venn3
+
+def plot_group_counts(df, group_col="Group"):
     """
-    Plot the count of patients in each group.
+    Multiplot: Left=barplot of patient group counts (1/3 width); Right=Venn diagram (2/3 width).
+    Venn diagram custom-labeled and shows patient counts per subgroup.
     """
-    if ax is None:
-        ax = plt.gca()
-    sns.countplot(x=group_col, data=df, ax=ax, palette="muted")
-    ax.set_title(f"{group_col} Distribution")
-    ax.set_xlabel("")
-    ax.set_ylabel("Count")
-    
-def plot_venn(df):
-    """
-    Plots a Venn diagram showing the intersection between Endometriosis, Leiomyoma, and Controls.
-    Expects columns: 'Group' (Control/Endometriosis), 'Leiomyoma' (Yes/No)
-    """
-    # Build sets of patient IDs for each group
-    set_endometriosis = set(df[df['Group'] == 'Endometriosis']['Patient_ID'])
-    set_leiomyoma = set(df[df['Leiomyoma'] == 'Yes']['Patient_ID'])
-    set_controls = set(df[df['Group'] == 'Control']['Patient_ID'])
-    
-    plt.figure(figsize=(7, 7))
-    venn = venn3(
-        [set_endometriosis, set_leiomyoma, set_controls],
-        set_labels=('Endometriosis', 'Leiomyoma', 'Controls')
+    # Define colors
+    color_endo = '#1f77b4'
+    color_control = '#ff7f0e'
+    color_leiomyoma = '#2ca02c'
+    group_palette = {"Endometriosis": color_endo, "Control": color_control}
+
+    # Prepare Venn sets
+    set_endo = set(df[df['Group'] == 'Endometriosis']['Patient_ID'])
+    set_control = set(df[df['Group'] == 'Control']['Patient_ID'])
+    set_myoma = set(df[df['Leiomyoma'] == 'Yes']['Patient_ID'])
+
+    fig, axes = plt.subplots(
+        1, 2, figsize=(13, 6),
+        gridspec_kw={'width_ratios': [1, 2]}
     )
-    plt.title("Patient Group Overlap: Endometriosis, Leiomyoma, Controls")
+
+    # -- Left: Barplot
+    sns.countplot(
+        x=group_col, data=df, ax=axes[0],
+        palette=group_palette
+    )
+    axes[0].set_title(f"{group_col} Distribution", fontsize=14)
+    axes[0].set_xlabel("")
+    axes[0].set_ylabel("Count")
+    axes[0].tick_params(axis='x', labelsize=12)
+    axes[0].tick_params(axis='y', labelsize=12)
+
+    # -- Calculate counts for each region (binary: Endo, Myoma, Control)
+    venn_counts = {
+        '100': len(set_endo - set_myoma - set_control),                                # Endo only
+        '010': len(set_myoma - set_endo - set_control),                                # Myoma only
+        '001': len(set_control - set_endo - set_myoma),                                # Control only
+        '110': len(set_endo & set_myoma - set_control),                                # Endo + Myoma
+        '011': len(set_myoma & set_control - set_endo),                                # Control + Myoma
+        '101': len(set_endo & set_control - set_myoma),                                # Endo + Control (should be 0 in well-defined datasets)
+        '111': len(set_endo & set_myoma & set_control),                                # All three (should be 0)
+    }
+
+    # -- Right: Venn diagram
+    venn = venn3(
+        [set_endo, set_myoma, set_control],
+        set_labels=( 'Endometriosis', 'Myoma', 'Control'),
+        set_colors=(color_endo, color_leiomyoma, color_control),
+        alpha=0.5,
+        ax=axes[1]
+    )
+
+    # Black border for circles
+    for patch in venn.patches:
+        if patch:
+            patch.set_edgecolor('black')
+            patch.set_linewidth(2.2)
+
+    # Custom intersection labels, only showing non-empty regions
+    custom_labels = {
+        '100': "Endo",
+        '010': "Myoma",
+        '001': "CTRL",
+        '110': "Endo\n+\nMyoma",
+        '011': "CTRL\n+\nMyoma",
+        '101': "Endo\n+\nCTRL",
+        '111': "All three",
+    }
+    for region, label in custom_labels.items():
+        n = venn_counts[region]
+        subset = venn.get_label_by_id(region)
+        if subset and n > 0:
+            subset.set_text(f"{label}\n(n={n})")
+        elif subset:
+            subset.set_text("")  # Hide if region exists but count is 0
+
+    plt.tight_layout()
     plt.show()
+
     
 def stacked_percentage_barplot(data, categories, group_col, ax, palette, title):
     # Compute counts
@@ -268,30 +324,58 @@ def plot_biomarker_heatmap(
     df: pd.DataFrame,
     biomarker_cols: list,
     group_col: str = "Group",
-    by_group_mean: bool = True,
-    cmap: str = "vlag"
+    myoma_col: str = "Leiomyoma",
+    rasrm_col: str = "rASRM_stage",
+    cmap: str = "RdYlBu_r"
 ):
     """
-    Plot a heatmap of biomarker values.
-    - If by_group_mean: shows group-wise average expression.
-    - Else: shows all patients (may be large).
+    Multiplot: 
+      Left: Heatmap of mean biomarker values for each clinical subgroup (Group + Leiomyoma)
+      Right: Heatmap of mean biomarker values for each rASRM stage
     """
-    if by_group_mean:
-        data = df.groupby(group_col)[biomarker_cols].mean().T
-        plt.figure(figsize=(max(8, len(df[group_col].unique())*2), max(6, len(biomarker_cols)*0.5)))
-        sns.heatmap(data, annot=True, cmap=cmap, cbar_kws={"label": "Mean Expression"})
-        plt.title("Group-wise Mean Biomarker Heatmap")
-        plt.xlabel("Group")
-        plt.ylabel("Biomarker")
-    else:
-        data = df[biomarker_cols].T
-        plt.figure(figsize=(max(10, df.shape[0] * 0.15), max(6, len(biomarker_cols) * 0.5)))
-        sns.heatmap(data, cmap=cmap, cbar_kws={"label": "Expression"})
-        plt.title("Biomarker Heatmap (All Patients)")
-        plt.xlabel("Patient")
-        plt.ylabel("Biomarker")
+    # Build subgroup label
+    subgroups = df[group_col] + " + " + df[myoma_col]
+    df_sub = df.copy()
+    df_sub["Subgroup"] = subgroups
+
+    # Left: Mean per Subgroup
+    subgroup_means = df_sub.groupby("Subgroup")[biomarker_cols].mean().T
+
+    # Right: Mean per rASRM stage (Endometriosis patients only)
+    rasrm_means = (
+        df[df[group_col] == "Endometriosis"]
+        .groupby(rasrm_col)[biomarker_cols].mean().T
+    )
+    # Order columns for clarity
+    subgroup_order = sorted(subgroup_means.columns, key=lambda x: (x.startswith("Control"), x))
+    rasrm_order = ["I", "II", "III", "IV"]
+    rasrm_means = rasrm_means[[c for c in rasrm_order if c in rasrm_means.columns]]
+
+    fig, axes = plt.subplots(1, 2, figsize=(18, max(6, len(biomarker_cols) * 0.5)))
+
+    # Left Heatmap: Subgroups
+    sns.heatmap(
+        subgroup_means[subgroup_order],
+        annot=True, fmt=".2f", cmap=cmap, ax=axes[0],
+        cbar_kws={"label": "Mean Expression"}
+    )
+    axes[0].set_title("Biomarker Means by Subgroup")
+    axes[0].set_xlabel("Subgroup")
+    axes[0].set_ylabel("Biomarker")
+
+    # Right Heatmap: rASRM
+    sns.heatmap(
+        rasrm_means,
+        annot=True, fmt=".2f", cmap=cmap, ax=axes[1],
+        cbar_kws={"label": "Mean Expression"}
+    )
+    axes[1].set_title("Biomarker Means by rASRM Stage")
+    axes[1].set_xlabel("rASRM Stage")
+    axes[1].set_ylabel("")
+
     plt.tight_layout()
     plt.show()
+
 
 def plot_biomarker_correlation(
     df: pd.DataFrame,

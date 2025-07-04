@@ -63,7 +63,7 @@ def remove_biomarker_outliers(
     df: pd.DataFrame,
     biomarker_cols=None,
     outliers_path="data/interim/biomarker_outliers.csv",
-    iqr_multiplier=1.5
+    iqr_multiplier=3
 ) -> pd.DataFrame:
     """
     Remove outliers from biomarker columns using the IQR rule.
@@ -87,9 +87,9 @@ def remove_biomarker_outliers(
     for col in biomarker_cols:
         q1 = df[col].quantile(0.25)
         q3 = df[col].quantile(0.75)
-        iqr = q3 - q1
-        lower = q1 - iqr_multiplier * iqr
-        upper = q3 + iqr_multiplier * iqr
+        sd = df[col].std()
+        lower = q1 - iqr_multiplier * sd
+        upper = q3 + iqr_multiplier * sd
         outlier_mask = outlier_mask | (df[col] < lower) | (df[col] > upper)
     
     # Save outliers
