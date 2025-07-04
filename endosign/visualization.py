@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from matplotlib_venn import venn3
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 
 def plot_group_counts(df: pd.DataFrame, group_col: str = "Group", ax=None):
     """
@@ -112,30 +113,77 @@ def multiplot_endo_class(df):
 
     plt.tight_layout()
     plt.show()
+    
+def multiplot_biomarkers(
+        df, biomarker_cols, 
+    group_by='rASRM_stage',
+    group_order=None,
+    palette=None,
+    subset_condition=None,
+    n_cols=4,
+    jitter=0.2,
+    alpha=0.6,
+    marker_size=5,
+    show_swarm=False,
+    swarm_kwargs=None,
+):
+    """
+    Multiplot boxplots of each biomarker, grouped by the chosen categorical variable,
+    with overlaid individual data points.
+    
+    Args:
+        df: DataFrame
+        biomarker_cols: list of biomarker columns
+        group_by: column to group by (default: 'rASRM_stage')
+        group_order: order for grouping variable (list)
+        palette: seaborn color palette
+        subset_condition: function or boolean mask to filter df
+        n_cols: number of columns in multiplot
+        jitter: stripplot jitter
+        alpha: transparency of points
+        marker_size: size of points
+        show_swarm: if True, use swarmplot instead of stripplot
+        swarm_kwargs: dict, extra kwargs for swarmplot (e.g., {"linewidth":0.5, "edgecolor":"gray"})
+    """
+    data = df
+    if subset_condition is not None:
+        data = data[subset_condition(data)] if callable(subset_condition) else data[subset_condition]
 
-def plot_biomarker_boxplots(df: pd.DataFrame, biomarker_cols: list, group_col: str = "Group", n_cols: int = 4):
-    """
-    Multi-panel boxplots for biomarker values by group.
-    """
     n_biomarkers = len(biomarker_cols)
     n_rows = int(np.ceil(n_biomarkers / n_cols))
     fig, axes = plt.subplots(n_rows, n_cols, figsize=(4 * n_cols, 4 * n_rows), squeeze=False)
-    for idx, biomarker in enumerate(biomarker_cols):
-        row, col = divmod(idx, n_cols)
-        sns.boxplot(
-            x=group_col,
-            y=biomarker,
-            data=df,
-            ax=axes[row][col],
-            palette="Set2"
-        )
-        axes[row][col].set_title(biomarker)
-        axes[row][col].set_xlabel("")
-        axes[row][col].set_ylabel("Value")
-    # Hide any empty subplots
-    for i in range(idx+1, n_rows*n_cols):
+
+    for i, biomarker in enumerate(biomarker_cols):
         row, col = divmod(i, n_cols)
-        axes[row][col].set_visible(False)
+        ax = axes[row][col]
+        sns.boxplot(
+            x=group_by, y=biomarker, hue=group_by,
+            data=data, order=group_order, palette=palette, ax=ax,
+            fliersize=0, legend=False
+        )
+        if ax.get_legend():
+            ax.get_legend().remove()
+        if show_swarm:
+            _swarm_kwargs = dict(size=marker_size, alpha=alpha)
+            if swarm_kwargs:
+                _swarm_kwargs.update(swarm_kwargs)
+            sns.swarmplot(
+                x=group_by, y=biomarker, data=data,
+                order=group_order, ax=ax, palette=palette, **_swarm_kwargs
+            )
+        else:
+            sns.stripplot(
+                x=group_by, y=biomarker, data=data,
+                order=group_order, ax=ax, color='k',
+                jitter=jitter, alpha=alpha, size=marker_size, dodge=True
+            )
+        ax.set_title(biomarker)
+        ax.set_xlabel(group_by)
+        ax.set_ylabel("Value")
+    # Hide empty plots
+    for j in range(n_biomarkers, n_rows * n_cols):
+        row, col = divmod(j, n_cols)
+        axes[row][col].axis('off')
     plt.tight_layout()
     plt.show()
 
@@ -264,5 +312,45 @@ def plot_biomarker_correlation(
     plt.title(f"Biomarker Correlation Matrix ({method.title()})")
     plt.xlabel("Biomarker")
     plt.ylabel("Biomarker")
+    plt.tight_layout()
+    plt.show()
+    
+def multiplot_embedding(df, embedding_2d, embedding_3d, color_by='Group', cluster_col='Cluster2D'):
+    """
+    Multiplot of 2D and 3D embeddings of patients, colored by clinical group and optionally cluster.
+    """
+    fig = plt.figure(figsize=(16, 7))
+    
+    # 2D plot
+    ax1 = fig.add_subplot(1, 2, 1)
+    scatter = sns.scatterplot(
+        x=embedding_2d.iloc[:, 0], y=embedding_2d.iloc[:, 1],
+        hue=df[color_by], style=df[cluster_col] if cluster_col else None,
+        palette='muted', s=70, edgecolor='k', alpha=0.8, ax=ax1
+    )
+    ax1.set_title(f"2D UMAP ({color_by})", fontsize=15)
+    ax1.set_xlabel("UMAP1")
+    ax1.set_ylabel("UMAP2")
+    ax1.set_aspect('equal', adjustable='box')
+    ax1.legend(title=color_by, bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0, frameon=False)
+    
+    # 3D plot
+    ax2 = fig.add_subplot(1, 2, 2, projection='3d')
+    unique_groups = df[color_by].unique()
+    palette = sns.color_palette('muted', n_colors=len(unique_groups))
+    color_dict = {g: palette[i] for i, g in enumerate(unique_groups)}
+    for g in unique_groups:
+        mask = df[color_by] == g
+        ax2.scatter(
+            embedding_3d.loc[mask, "DR1"], 
+            embedding_3d.loc[mask, "DR2"], 
+            embedding_3d.loc[mask, "DR3"],
+            label=str(g), s=45, alpha=0.85, color=color_dict[g], edgecolor='k'
+        )
+    ax2.set_title(f"3D UMAP ({color_by})", fontsize=15)
+    ax2.set_xlabel("UMAP1")
+    ax2.set_ylabel("UMAP2")
+    ax2.set_zlabel("UMAP3")
+    ax2.legend(title=color_by, loc='upper left', bbox_to_anchor=(1.08, 1), frameon=False)
     plt.tight_layout()
     plt.show()
