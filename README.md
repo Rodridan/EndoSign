@@ -2,7 +2,7 @@
   <img src="EndoSign_logo.png" alt="EndoSign Logo" width="300"/>
 </p>
 
-<h1 align="center">Endometriosis Plasma Biomarker Analysis using dimensionality reduction and classification of plasma biomarkers for endometriosis.</h1>
+<h2 align="center">Endometriosis Plasma Biomarker Analysis using dimensionality reduction and classification of plasma biomarkers for endometriosis.</h2>
 
 # Background & Biomedical Problem
 Endometriosis is a complex, heterogeneous gynecological disorder characterized by the presence of endometrial-like tissue outside the uterus. Affecting up to 10% of reproductive-age women, it is associated with chronic pelvic pain, infertility, and reduced quality of life. Diagnosis remains challenging, often delayed for years, and current clinical staging systems (such as rASRM) although of high importance for patient follow-up, are unable to capture the whole diversity of the disease.
