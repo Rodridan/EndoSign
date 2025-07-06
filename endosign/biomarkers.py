@@ -1,57 +1,109 @@
-"""
-Analysis and exploration of plasma biomarker landscapes.
-"""
-
 import pandas as pd
 import numpy as np
-from scipy.stats import ttest_ind, mannwhitneyu
+from scipy.stats import mannwhitneyu, kruskal, spearmanr
+from statsmodels.stats.multitest import multipletests
 
-def analyze_biomarker_distributions(df: pd.DataFrame, biomarker_cols: list, group_col: str = "Group"):
+def compare_biomarkers(
+    df: pd.DataFrame,
+    biomarker_cols: list,
+    group_col: str = "Group",
+    group1: str = "Endometriosis",
+    group2: str = "Control",
+    correction: str = "fdr_bh"
+) -> pd.DataFrame:
     """
-    Computes summary stats (mean, std, median, IQR) for each biomarker by group.
-    Returns: DataFrame with results.
-    """
-    summary = {}
-    for biomarker in biomarker_cols:
-        group_stats = df.groupby(group_col)[biomarker].agg(['mean', 'std', 'median', lambda x: np.percentile(x, 25), lambda x: np.percentile(x, 75)]).rename(
-            columns={'<lambda_0>': 'q25', '<lambda_1>': 'q75'}
-        )
-        summary[biomarker] = group_stats
-    return summary
-
-def compare_biomarkers_statistical(
-    df: pd.DataFrame, biomarker_cols: list, group_col: str = "Group",
-    group_a: str = "Endometriosis", group_b: str = "Control", method: str = "mannwhitney"
-):
-    """
-    For each biomarker, compare two groups using t-test or Mann-Whitney U test.
-    Returns: DataFrame of p-values and effect sizes.
+    Compare each biomarker between two groups (default: Endometriosis vs Control) using Mann-Whitney U test.
+    Returns a DataFrame with group medians, U-statistic, p-value, and adjusted p-value.
     """
     results = []
     for biomarker in biomarker_cols:
-        x = df[df[group_col] == group_a][biomarker].dropna()
-        y = df[df[group_col] == group_b][biomarker].dropna()
-        if method == "ttest":
-            stat, pval = ttest_ind(x, y, equal_var=False)
-        elif method == "mannwhitney":
-            stat, pval = mannwhitneyu(x, y, alternative="two-sided")
-        else:
-            raise ValueError("Unsupported method")
-        # Effect size (Cohen's d)
-        eff_size = (np.mean(x) - np.mean(y)) / np.sqrt((np.std(x) ** 2 + np.std(y) ** 2) / 2)
-        results.append({
-            "biomarker": biomarker,
-            "p_value": pval,
-            "effect_size": eff_size
-        })
+        group1_vals = df[df[group_col] == group1][biomarker].dropna()
+        group2_vals = df[df[group_col] == group2][biomarker].dropna()
+        if len(group1_vals) > 0 and len(group2_vals) > 0:
+            stat, p = mannwhitneyu(group1_vals, group2_vals, alternative='two-sided')
+            results.append({
+                "Biomarker": biomarker,
+                f"{group1}_median": np.median(group1_vals),
+                f"{group2}_median": np.median(group2_vals),
+                "U_stat": stat,
+                "p_value": p
+            })
+    stats_df = pd.DataFrame(results)
+    if not stats_df.empty and correction:
+        _, p_adj, _, _ = multipletests(stats_df["p_value"], method=correction)
+        stats_df["p_adj"] = p_adj
+    return stats_df.sort_values("p_value")
+
+def biomarker_kruskal(
+    df: pd.DataFrame,
+    biomarker_cols: list,
+    stage_col: str = "rASRM_stage",
+    stage_order: list = ["I", "II", "III", "IV"],
+    group_col: str = "Group",
+    case_value: str = "Endometriosis"
+) -> pd.DataFrame:
+    """
+    Kruskal-Wallis test for trend across rASRM stages for each biomarker (cases only).
+    Returns H and p-value for each biomarker.
+    """
+    results = []
+    df_case = df[df[group_col] == case_value]
+    for biomarker in biomarker_cols:
+        data = []
+        for stage in stage_order:
+            vals = df_case[df_case[stage_col] == stage][biomarker].dropna()
+            if len(vals) > 0:
+                data.append(vals)
+        if len(data) == len(stage_order):
+            stat, p = kruskal(*data)
+            results.append({
+                "Biomarker": biomarker,
+                "H_stat": stat,
+                "p_value": p
+            })
     return pd.DataFrame(results).sort_values("p_value")
 
-def find_candidate_biomarkers(
-    stats_df: pd.DataFrame, p_thresh: float = 0.05, effect_thresh: float = 0.5
-):
+def biomarker_corr_with_feature(
+    df: pd.DataFrame,
+    biomarker_cols: list,
+    feature_col: str = "Pain_Score",
+    group_col: str = "Group",
+    group_value: str = "Endometriosis"
+) -> pd.DataFrame:
     """
-    Return biomarkers that are statistically significant and have substantial effect size.
+    Spearman correlation of each biomarker with a given clinical feature (e.g. Pain_Score), in selected group.
     """
-    candidates = stats_df[(stats_df["p_value"] < p_thresh) & (stats_df["effect_size"].abs() > effect_thresh)]
-    return candidates["biomarker"].tolist()
+    df_sel = df[df[group_col] == group_value]
+    results = []
+    for biomarker in biomarker_cols:
+        vals = df_sel[biomarker].dropna()
+        feature = df_sel.loc[vals.index, feature_col].dropna()
+        if len(vals) == len(feature) and len(vals) > 0:
+            rho, p = spearmanr(vals, feature)
+            results.append({
+                "Biomarker": biomarker,
+                "rho": rho,
+                "p_value": p
+            })
+    results_df = pd.DataFrame(results).sort_values("p_value")
+    # Optional: FDR correction
+    if not results_df.empty:
+        _, p_adj, _, _ = multipletests(results_df["p_value"], method="fdr_bh")
+        results_df["p_adj"] = p_adj
+    return results_df
+
+def biomarker_stats(
+    df: pd.DataFrame,
+    biomarker_cols: list,
+    group_col: str = "Group"
+) -> pd.DataFrame:
+    """
+    Returns group-wise medians and IQRs for each biomarker.
+    """
+    stats = []
+    for biomarker in biomarker_cols:
+        grouped = df.groupby(group_col)[biomarker].agg(['median', 'mean', 'std', 'min', 'max', 'count'])
+        grouped['biomarker'] = biomarker
+        stats.append(grouped)
+    return pd.concat(stats, axis=0)
 
